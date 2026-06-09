@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, role, name
+    //
+    // Collection: routes
+    // Fields: id, name, description, driverId, stops (array of Stop objects)
+    //
+    // Collection: trips
+    // Fields: id, routeId, driverId, status, currentLat, currentLng, lastUpdated, alert
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "emerson0712002@gmail.com");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['student', 'driver', 'admin'];
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll(['routeId', 'driverId', 'status', 'driverName']) &&
+             data.routeId is string &&
+             data.driverId is string &&
+             data.driverName is string &&
+             data.status in ['active', 'completed'];
+    }
+
+    function isValidShift(data) {
+      return data.keys().hasAll(['driverId', 'driverName', 'startTime', 'date']) &&
+             data.driverId == request.auth.uid &&
+             data.driverName is string &&
+             data.date is string;
+    }
+
+    // Final Security Rules
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /routes/{routeId} {
+      allow read, write: if true;
+    }
+
+    match /trips/{tripId} {
+      allow read, write: if true;
+    }
+
+    match /shifts/{shiftId} {
+      allow read, write: if true;
+    }
+  }
+}

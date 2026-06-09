@@ -1,0 +1,5 @@
+{
+  "name": "BusLocation",
+  "description": "Aplicativo de monitoramento em tempo real do transporte escolar em Belo Jardim-PE.",
+  "requestFramePermissions": ["geolocation"]
+}

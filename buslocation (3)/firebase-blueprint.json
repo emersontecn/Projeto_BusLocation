@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user (student or driver)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["student", "driver"] },
+        "name": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Route": {
+      "title": "Route",
+      "description": "A bus route with multiple stops",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "driverId": { "type": "string" },
+        "stops": {
+          "type": "array",
+          "items": { "$ref": "Stop" }
+        }
+      },
+      "required": ["name"]
+    },
+    "Stop": {
+      "title": "Stop",
+      "description": "A bus stop location",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "streetName": { "type": "string" },
+        "referencePoint": { "type": "string" },
+        "estimatedTime": { "type": "string" },
+        "zipCode": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "order": { "type": "number" }
+      },
+      "required": ["name", "lat", "lng"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "An active bus trip",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "routeId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "currentLat": { "type": "number" },
+        "currentLng": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" },
+        "alert": { "type": "string" }
+      },
+      "required": ["routeId", "driverId", "status"]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "A driver's working shift log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "date": { "type": "string" }
+      },
+      "required": ["driverId", "driverName", "startTime", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/routes/{routeId}": {
+      "schema": "Route",
+      "description": "Bus routes"
+    },
+    "/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Active bus trips"
+    },
+    "/shifts/{shiftId}": {
+      "schema": "Shift",
+      "description": "Driver shift history"
+    }
+  }
+}
