@@ -2,8 +2,29 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { Stop } from '../types';
+
+const getTileUrl = (style: 'google-roads' | 'google-hybrid' | 'google-traffic' | 'osm') => {
+  switch (style) {
+    case 'google-roads':
+      return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+    case 'google-hybrid':
+      return 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+    case 'google-traffic':
+      return 'https://mt1.google.com/vt/lyrs=m,traffic&x={x}&y={y}&z={z}';
+    case 'osm':
+    default:
+      return 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  }
+};
+
+const getAttribution = (style: 'google-roads' | 'google-hybrid' | 'google-traffic' | 'osm') => {
+  if (style.startsWith('google')) {
+    return '&copy; Google Maps';
+  }
+  return '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+};
 
 // Fix for default marker icons in Leaflet with React
 const defaultIcon = new L.Icon({
@@ -98,12 +119,14 @@ function getAngle(coord1: [number, number], coord2: [number, number]): number {
   return Math.atan2(dy, dx) * 180 / Math.PI;
 }
 
-// Helper to shift a path to the right side of driving direction (mão) to prevent overlap on two-way streets
+// Helper to shift a path to the right side of driving direction (mão) to prevent overlap on two-way streets with corner smoothing
 function offsetPath(path: [number, number][], offsetDegrees: number = 0.000045): [number, number][] {
   if (!path || path.length < 2) return path;
 
   const result: [number, number][] = [];
+  const normals: [number, number][] = [];
 
+  // 1. Calculate raw normals for each point based on local segment directions
   for (let i = 0; i < path.length; i++) {
     const curr = path[i];
     let prev = path[i - 1];
@@ -124,15 +147,46 @@ function offsetPath(path: [number, number][], offsetDegrees: number = 0.000045):
     const len = Math.sqrt(dy * dy + dx * dx);
 
     if (len === 0) {
-      result.push([...curr] as [number, number]);
-      continue;
+      normals.push([0, 0]);
+    } else {
+      // Perpendicular vector pointing to the right of standard driving direction
+      const nx = -dx / len;
+      const ny = dy / len;
+      normals.push([nx, ny]);
     }
+  }
 
-    // Perpendicular vector pointing to the right of standard driving direction
-    const nx = -dx / len;
-    const ny = dy / len;
+  // 2. Smooth normals using a moving average window to prevent angular spikes on sharp turns/intersections
+  const smoothedNormals: [number, number][] = [];
+  const windowSize = 3;
+  for (let i = 0; i < normals.length; i++) {
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (let w = -Math.floor(windowSize / 2); w <= Math.floor(windowSize / 2); w++) {
+      const idx = i + w;
+      if (idx >= 0 && idx < normals.length) {
+        sumX += normals[idx][0];
+        sumY += normals[idx][1];
+        count++;
+      }
+    }
+    const avgX = sumX / count;
+    const avgY = sumY / count;
+    const len = Math.sqrt(avgX * avgX + avgY * avgY);
+    if (len === 0) {
+      smoothedNormals.push([0, 0]);
+    } else {
+      smoothedNormals.push([avgX / len, avgY / len]);
+    }
+  }
 
-    // Apply offset (nx/ny maps straight to latitude and longitude change)
+  // 3. Apply smoothed offsets to the coordinates, relative to local latitude scaling
+  for (let i = 0; i < path.length; i++) {
+    const curr = path[i];
+    const [nx, ny] = smoothedNormals[i];
+    const cosLat = Math.cos(curr[0] * Math.PI / 180);
+
     const offsetLat = nx * offsetDegrees;
     const offsetLng = (ny * offsetDegrees) / cosLat;
 
@@ -189,6 +243,7 @@ function renderDirectionalMarkers(path: [number, number][], idPrefix: string, co
 export default function Map({ center, zoom = 14, busLocation, stops = [], className, onMapClick, pendingStop, routeGeometry, returnGeometry }: MapProps) {
   const stopPositions = stops.map(stop => [stop.lat, stop.lng] as [number, number]);
   const [isLegendExpanded, setIsLegendExpanded] = useState(true);
+  const [mapStyle, setMapStyle] = useState<'google-roads' | 'google-hybrid' | 'google-traffic' | 'osm'>('google-roads');
 
   return (
     <div className={`relative ${className || ''}`} style={{ height: '100%', width: '100%', minHeight: '300px' }}>
@@ -198,8 +253,9 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
         style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          key={mapStyle}
+          attribution={getAttribution(mapStyle)}
+          url={getTileUrl(mapStyle)}
         />
         <ChangeView center={center} zoom={zoom} />
         <MapEvents onClick={onMapClick} />
@@ -351,7 +407,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
       </MapContainer>
 
       {/* Floating Route Legend Overlay */}
-      <div className={`absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-md px-3 md:px-4 rounded-2xl shadow-xl border border-slate-100 pointer-events-auto max-w-[190px] sm:max-w-[240px] transition-all duration-300 ${
+      <div className={`absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-md px-3 md:px-4 rounded-2xl shadow-xl border border-slate-100 pointer-events-auto max-w-[210px] sm:max-w-[270px] transition-all duration-300 ${
         isLegendExpanded ? 'pb-2.5 pt-3' : 'py-2'
       }`}>
         <button 
@@ -362,9 +418,9 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           title={isLegendExpanded ? "Contrair legenda" : "Expandir legenda"}
         >
           <div className="flex items-center gap-1.5 mr-2">
-            <h4 className="text-[10px] sm:text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Legenda</h4>
+            <h4 className="text-[10px] sm:text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Configurações</h4>
             {isLegendExpanded && (
-              <span className="text-[8px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded font-black uppercase tracking-wider animate-pulse">Ativa</span>
+              <span className="text-[8px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded font-black uppercase tracking-wider animate-pulse">Ativo</span>
             )}
           </div>
           {isLegendExpanded ? (
@@ -374,8 +430,62 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           )}
         </button>
         <div className={`space-y-2.5 text-[10px] sm:text-xs text-slate-600 leading-relaxed transition-all duration-300 ease-in-out origin-bottom ${
-          isLegendExpanded ? 'max-h-60 opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 overflow-hidden pointer-events-none'
+          isLegendExpanded ? 'max-h-96 opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 overflow-hidden pointer-events-none'
         }`}>
+          {/* Seletor de API / Estilo de Mapa */}
+          <div className="border-b border-slate-100 pb-2 mb-1.5 bg-slate-50/50 p-1.5 rounded-xl border border-slate-100/50">
+            <div className="flex items-center gap-1 mb-1.5 text-[9px] font-black text-slate-700 uppercase tracking-widest">
+              <Layers className="w-3 h-3 text-blue-600 shrink-0" />
+              <span>API / Estilo de Mapa</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1 text-[8px] sm:text-[9px] font-bold">
+              <button
+                onClick={() => setMapStyle('google-roads')}
+                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
+                  mapStyle === 'google-roads'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-200/50'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
+                }`}
+                title="Google Maps Vetorizado - Altamente Preciso"
+              >
+                Google Maps
+              </button>
+              <button
+                onClick={() => setMapStyle('google-traffic')}
+                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
+                  mapStyle === 'google-traffic'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200/50'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
+                }`}
+                title="Google Maps com Tráfego Realtime - Excelente para ver mãos e fluxo"
+              >
+                G. Trânsito
+              </button>
+              <button
+                onClick={() => setMapStyle('google-hybrid')}
+                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
+                  mapStyle === 'google-hybrid'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-200/50'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
+                }`}
+                title="Google Satélite com arruamento híbrido preciso"
+              >
+                Satélite HD
+              </button>
+              <button
+                onClick={() => setMapStyle('osm')}
+                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
+                  mapStyle === 'osm'
+                    ? 'bg-slate-700 text-white border-slate-700 shadow-sm shadow-slate-200/50'
+                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
+                }`}
+                title="OpenStreetMap Clássico"
+              >
+                OpenStreet
+              </button>
+            </div>
+          </div>
+
           {/* Mão de Ida */}
           <div className="flex items-start gap-2 pt-0.5">
             <div className="flex flex-col items-center gap-0.5 pt-1">
