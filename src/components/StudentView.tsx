@@ -157,7 +157,7 @@ export default function StudentView({ serviceType, entityName }: StudentViewProp
   const [isStopsExpanded, setIsStopsExpanded] = useState(false);
 
   return (
-    <div className="relative flex-1 w-full rounded-2xl md:rounded-3xl overflow-hidden border-2 md:border-4 border-white shadow-2xl bg-white min-h-[500px]">
+    <div className="relative flex-1 h-full w-full rounded-2xl md:rounded-3xl overflow-hidden border-2 md:border-4 border-white shadow-2xl bg-white min-h-[680px]">
       {/* MAPA - Elemento Primário (Fundo) */}
       <div className="absolute inset-0 z-0">
         <Map 

@@ -146,7 +146,7 @@ export default function App() {
     );
   }
 
-  const showSelection = !serviceConfig && (user?.role !== 'driver' || viewMode === 'map');
+  const showSelection = !serviceConfig && !isLoggingInAsDriver && user?.role !== 'driver' && !(viewMode === 'admin' && isAdmin);
 
   return (
     <AccessibilityProvider>
