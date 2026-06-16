@@ -11,9 +11,10 @@ import { PREDEFINED_ENTITIES } from '../constants';
 interface ServiceSelectionProps {
   onSelect: (type: ServiceType, entity?: string) => void;
   onDriverAccessClick?: () => void;
+  onAdminAccessClick?: () => void;
 }
 
-export default function ServiceSelection({ onSelect, onDriverAccessClick }: ServiceSelectionProps) {
+export default function ServiceSelection({ onSelect, onDriverAccessClick, onAdminAccessClick }: ServiceSelectionProps) {
   const [step, setStep] = useState<'type' | 'entity'>('type');
   const [selectedType, setSelectedType] = useState<ServiceType | null>(null);
   const [entities, setEntities] = useState<string[]>([]);
@@ -102,23 +103,37 @@ export default function ServiceSelection({ onSelect, onDriverAccessClick }: Serv
 
             {onDriverAccessClick && (
               <div className="pt-6 border-t border-slate-100 flex flex-col items-center gap-3">
-                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Acesso Administrativo ou Operacional?</span>
+                <span className="text-xs text-slate-400 font-extrabold uppercase tracking-widest">Painel Operacional</span>
+                
+                {/* BIG PROMINENT BUTTON FOR MOTORISTA */}
                 <button
                   type="button"
                   onClick={onDriverAccessClick}
-                  className="w-full py-4 px-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm text-slate-700 font-bold flex items-center justify-between gap-3 transition-all hover:scale-[1.01] active:scale-[0.99] group"
+                  className="w-full py-5 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black hover:shadow-lg hover:shadow-blue-100 transition-all hover:scale-[1.01] active:scale-[0.99] group flex items-center justify-between cursor-pointer border-0"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-lg border border-slate-100 shadow-sm group-hover:border-purple-200 group-hover:bg-purple-50 transition-colors shrink-0">
-                      <ShieldCheck className="w-5 h-5 text-slate-500 group-hover:text-purple-600 group-hover:scale-110 transition-all" />
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-white/10 rounded-xl text-white">
+                      <Bus className="w-6 h-6 animate-pulse" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-bold text-slate-800">Sou Motorista / Administrador</p>
-                      <p className="text-xs text-slate-400 font-normal">Acessar com e-mail e senha de trabalho</p>
+                      <p className="text-lg font-extrabold tracking-tight">Sou Motorista</p>
+                      <p className="text-xs text-blue-100 font-normal opacity-90">Iniciar rota de transporte em tempo real</p>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-all shrink-0" />
+                  <ChevronRight className="w-5 h-5 text-white/80 group-hover:text-white transition-all shrink-0" />
                 </button>
+
+                {/* DISCREET LINK FOR DIREÇÃO */}
+                {onAdminAccessClick && (
+                  <button
+                    type="button"
+                    onClick={onAdminAccessClick}
+                    className="mt-2 text-slate-400 hover:text-purple-600 text-xs font-semibold py-1.5 px-4 rounded-full hover:bg-slate-100 transition-all flex items-center gap-1.5 select-none cursor-pointer border border-transparent hover:border-slate-200"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-slate-400 group-hover:text-purple-600" />
+                    <span>Acesso da Direção (Administrativo)</span>
+                  </button>
+                )}
               </div>
             )}
           </motion.div>

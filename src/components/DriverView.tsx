@@ -118,7 +118,11 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
         });
       },
       (err) => console.error(err),
-      { enableHighAccuracy: true }
+      { 
+        enableHighAccuracy: true,
+        timeout: 3000,
+        maximumAge: 0
+      }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);

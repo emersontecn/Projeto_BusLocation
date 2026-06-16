@@ -43,13 +43,56 @@ const busIcon = new L.Icon({
   popupAnchor: [0, -40],
 });
 
-const stopIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149060.png',
-  iconSize: [24, 24],
-  iconAnchor: [12, 24],
-  popupAnchor: [0, -24],
-  className: 'red-marker-filter',
-});
+// Helper to calculate exact distance in meters between two coordinates (Haversine Formula)
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth radius in meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lng2 - lng1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // distance in meters
+}
+
+const createStopIcon = (status: 'pending' | 'passing' | 'passed', order: number) => {
+  let bgColorClass = 'bg-rose-500';
+  let pulseElement = '';
+  let borderClass = 'border-white';
+  let textShadow = 'text-shadow';
+  let innerContent = `<span class="text-[9px] font-black">${order}</span>`;
+
+  if (status === 'passing') {
+    bgColorClass = 'bg-emerald-500 animate-pulse scale-110';
+    borderClass = 'border-white dark:border-slate-900';
+    pulseElement = `<div class="absolute inset-x-0 inset-y-0 rounded-full bg-emerald-400 opacity-60 animate-ping"></div>`;
+    innerContent = `<span class="text-[9px] font-black">★</span>`;
+  } else if (status === 'passed') {
+    bgColorClass = 'bg-slate-400';
+    borderClass = 'border-slate-200';
+    innerContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="45" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  }
+
+  return L.divIcon({
+    className: 'bg-transparent border-none',
+    html: `
+      <div class="relative flex items-center justify-center w-7 h-7">
+        ${pulseElement}
+        <div class="absolute bottom-0 w-2 h-2 bg-slate-800 rotate-45 transform translate-y-[2px] shadow-sm"></div>
+        <div class="z-10 flex items-center justify-center w-6 h-6 rounded-full text-white font-black text-[10px] shadow-lg border-2 ${borderClass} ${bgColorClass} transition-all duration-300">
+          ${innerContent}
+        </div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -28],
+  });
+};
 
 interface MapProps {
   center: [number, number];
@@ -244,6 +287,51 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
   const stopPositions = stops.map(stop => [stop.lat, stop.lng] as [number, number]);
   const [isLegendExpanded, setIsLegendExpanded] = useState(true);
   const [mapStyle, setMapStyle] = useState<'google-roads' | 'google-hybrid' | 'google-traffic' | 'osm'>('google-roads');
+  
+  const [passedStopIds, setPassedStopIds] = useState<string[]>([]);
+  const [passingStopId, setPassingStopId] = useState<string | null>(null);
+  const [detectionRadius, setDetectionRadius] = useState<number>(75); // dynamic meter range for API tracking!
+
+  // Reset passed stops tracking when the route/stops array changes
+  const stopsHash = stops.map(s => s.id).join(',');
+  useEffect(() => {
+    setPassedStopIds([]);
+    setPassingStopId(null);
+  }, [stopsHash]);
+
+  // Track the bus position relative to each stop in real-time
+  useEffect(() => {
+    if (!busLocation || !stops || stops.length === 0) return;
+
+    let currentPassingId: string | null = null;
+    let closestDist = Infinity;
+
+    stops.forEach((stop) => {
+      const dist = calculateDistance(busLocation[0], busLocation[1], stop.lat, stop.lng);
+      // Check if within the chosen detection accuracy radius (e.g. 50m, 75m, 120m)
+      if (dist < detectionRadius && dist < closestDist) {
+        currentPassingId = stop.id;
+        closestDist = dist;
+      }
+    });
+
+    if (currentPassingId) {
+      setPassingStopId(currentPassingId);
+      setPassedStopIds((prev) => {
+        const targetStop = stops.find((s) => s.id === currentPassingId);
+        const targetOrder = targetStop ? targetStop.order : 0;
+
+        // Auto-complete preceding stops since routes are traversed sequentially
+        const completedIds = stops
+          .filter((s) => s.order <= targetOrder)
+          .map((s) => s.id);
+
+        return Array.from(new Set([...prev, ...completedIds]));
+      });
+    } else {
+      setPassingStopId(null);
+    }
+  }, [busLocation, stops, detectionRadius]);
 
   return (
     <div className={`relative ${className || ''}`} style={{ height: '100%', width: '100%', minHeight: '300px' }}>
@@ -392,18 +480,36 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           );
         })()}
 
-        {stops.map((stop, index) => (
-          <Marker key={index} position={[stop.lat, stop.lng]} icon={stopIcon}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-bold">{stop.name}</p>
-                {stop.streetName && <p className="text-xs">Rua: {stop.streetName} {stop.zipCode && `- CEP: ${stop.zipCode}`}</p>}
-                {stop.referencePoint && <p className="text-xs italic">Ref: {stop.referencePoint}</p>}
-                {stop.estimatedTime && <p className="text-xs font-semibold text-primary">Horário: {stop.estimatedTime}</p>}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {stops.map((stop, index) => {
+          let status: 'pending' | 'passing' | 'passed' = 'pending';
+          if (stop.id === passingStopId) {
+            status = 'passing';
+          } else if (passedStopIds.includes(stop.id)) {
+            status = 'passed';
+          }
+
+          return (
+            <Marker 
+              key={stop.id || index} 
+              position={[stop.lat, stop.lng]} 
+              icon={createStopIcon(status, stop.order || index + 1)}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">Ponto {stop.order || index + 1}</span>
+                    {status === 'passing' && <span className="text-[9px] font-black uppercase text-emerald-600 animate-pulse bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">Atual</span>}
+                    {status === 'passed' && <span className="text-[9px] font-black uppercase text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">✔ Visitado</span>}
+                  </div>
+                  <p className="font-bold text-slate-800">{stop.name}</p>
+                  {stop.streetName && <p className="text-xs text-slate-500">Rua: {stop.streetName} {stop.zipCode && `- CEP: ${stop.zipCode}`}</p>}
+                  {stop.referencePoint && <p className="text-xs text-slate-400 italic">Ref: {stop.referencePoint}</p>}
+                  {stop.estimatedTime && <p className="text-xs font-semibold text-rose-500 mt-1">Horário Estimado: {stop.estimatedTime}</p>}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
       {/* Floating Route Legend Overlay */}
@@ -430,13 +536,13 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           )}
         </button>
         <div className={`space-y-2.5 text-[10px] sm:text-xs text-slate-600 leading-relaxed transition-all duration-300 ease-in-out origin-bottom ${
-          isLegendExpanded ? 'max-h-96 opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 overflow-hidden pointer-events-none'
+          isLegendExpanded ? 'max-h-[500px] opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 overflow-hidden pointer-events-none'
         }`}>
           {/* Seletor de API / Estilo de Mapa */}
-          <div className="border-b border-slate-100 pb-2 mb-1.5 bg-slate-50/50 p-1.5 rounded-xl border border-slate-100/50">
+          <div className="border-b border-slate-100 pb-2 mb-1 bg-slate-50/50 p-1.5 rounded-xl border border-slate-100/50">
             <div className="flex items-center gap-1 mb-1.5 text-[9px] font-black text-slate-700 uppercase tracking-widest">
               <Layers className="w-3 h-3 text-blue-600 shrink-0" />
-              <span>API / Estilo de Mapa</span>
+              <span>Estilo de Mapa</span>
             </div>
             <div className="grid grid-cols-2 gap-1 text-[8px] sm:text-[9px] font-bold">
               <button
@@ -486,6 +592,52 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
             </div>
           </div>
 
+          {/* Seletor de Precisão da API / GPS */}
+          <div className="border-b border-slate-100 pb-2 mb-1.5 bg-sky-50/50 p-1.5 rounded-xl border border-sky-100/50">
+            <div className="flex items-center gap-1 mb-1.5 text-[9px] font-black text-sky-800 uppercase tracking-widest">
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-sky-500"></span>
+              </span>
+              <span>Precisão GPS / Detecção</span>
+            </div>
+            <div className="grid grid-cols-3 gap-0.5 text-[7px] sm:text-[8px] font-bold">
+              <button
+                onClick={() => setDetectionRadius(30)}
+                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
+                  detectionRadius === 30
+                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
+                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
+                }`}
+                title="Alta Precisão (30m) - Ideal para vias urbanas densas"
+              >
+                Fina (30m)
+              </button>
+              <button
+                onClick={() => setDetectionRadius(75)}
+                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
+                  detectionRadius === 75
+                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
+                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
+                }`}
+                title="Média Precisão (75m) - Recomendado"
+              >
+                Padrão (75m)
+              </button>
+              <button
+                onClick={() => setDetectionRadius(150)}
+                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
+                  detectionRadius === 150
+                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
+                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
+                }`}
+                title="Ampla Precisão (150m) - Ideal para distritos ou rodovias rápidas"
+              >
+                Ampla (150m)
+              </button>
+            </div>
+          </div>
+
           {/* Mão de Ida */}
           <div className="flex items-start gap-2 pt-0.5">
             <div className="flex flex-col items-center gap-0.5 pt-1">
@@ -518,17 +670,41 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
             </div>
           </div>
 
-          {/* Ponto de Embarque */}
-          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-            <div className="w-7 flex justify-center">
-              <img src="https://cdn-icons-png.flaticon.com/512/149/149060.png" alt="ponto" className="w-4 h-4 red-marker-filter" />
+          {/* Estado de Pontos de Embarque */}
+          <div className="border-t border-slate-100 pt-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-rose-500 border-2 border-white shadow flex items-center justify-center text-white text-[8px] font-black shrink-0">1</span>
+              <div>
+                <p className="font-bold text-slate-700 leading-none">Ponto Programado</p>
+                <p className="text-[8px] text-slate-400 font-medium">Próximo na rota</p>
+              </div>
             </div>
-            <p className="font-bold text-slate-700">Embarque (Ponto)</p>
+
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                <span className="animate-ping absolute inline-flex h-4 w-4 rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-5 w-5 bg-emerald-500 border border-white text-white text-[9px] font-black items-center justify-center shadow-md">★</span>
+              </span>
+              <div>
+                <p className="font-bold text-slate-700 leading-none">Ponto em Trânsito</p>
+                <p className="text-[8px] text-emerald-600 font-medium animate-pulse">Ônibus detectado aqui</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-slate-400 border border-slate-200 shadow flex items-center justify-center text-white shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </span>
+              <div>
+                <p className="font-bold text-slate-700 leading-none">Ponto Visitado</p>
+                <p className="text-[8px] text-slate-400 font-medium">Finalizado com sucesso</p>
+              </div>
+            </div>
           </div>
 
           {/* Ônibus Realtime */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 flex justify-center">
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+            <div className="w-7 flex justify-center shrink-0">
               <img src="https://cdn-icons-png.flaticon.com/512/3448/3448339.png" alt="ônibus" className="w-4 h-4" />
             </div>
             <p className="font-bold text-slate-700">GPS Ônibus Vivo</p>

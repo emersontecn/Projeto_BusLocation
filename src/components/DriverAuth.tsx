@@ -7,16 +7,22 @@ import { UserProfile } from '../types';
 
 interface DriverAuthProps {
   onAuthSuccess: (user: UserProfile) => void;
+  initialRole?: 'admin' | 'driver' | null;
+  onBack?: () => void;
 }
 
 const ADMIN_EMAIL = 'emerson0712002@gmail.com';
 
-export default function DriverAuth({ onAuthSuccess }: DriverAuthProps) {
+export default function DriverAuth({ onAuthSuccess, initialRole = null, onBack }: DriverAuthProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'admin' | 'driver' | null>(null);
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'driver' | null>(initialRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  React.useEffect(() => {
+    setSelectedRole(initialRole);
+  }, [initialRole]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +92,13 @@ export default function DriverAuth({ onAuthSuccess }: DriverAuthProps) {
             <Button 
               variant="ghost" 
               className="w-fit -ml-2 text-slate-500 mb-2" 
-              onClick={() => setSelectedRole(null)}
+              onClick={() => {
+                if (initialRole) {
+                  onBack?.();
+                } else {
+                  setSelectedRole(null);
+                }
+              }}
             >
               ← Voltar
             </Button>

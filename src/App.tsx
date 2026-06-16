@@ -26,6 +26,7 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggingInAsDriver, setIsLoggingInAsDriver] = useState(false);
+  const [authRole, setAuthRole] = useState<'driver' | 'admin' | null>(null);
   const [hasStartedShift, setHasStartedShift] = useState(false);
   const [serviceConfig, setServiceConfig] = useState<ServiceConfig | null>(null);
   const [viewMode, setViewMode] = useState<'map' | 'admin'>('map');
@@ -220,19 +221,39 @@ export default function App() {
         <div className={`flex-1 flex flex-col relative ${viewMode !== 'admin' || !isAdmin ? 'h-[calc(100vh-4rem)] overflow-hidden' : ''}`}>
           {showSelection ? (
             <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
-              <ServiceSelection onSelect={handleServiceSelect} onDriverAccessClick={() => setIsLoggingInAsDriver(true)} />
+              <ServiceSelection 
+                onSelect={handleServiceSelect} 
+                onDriverAccessClick={() => {
+                  setAuthRole('driver');
+                  setIsLoggingInAsDriver(true);
+                }}
+                onAdminAccessClick={() => {
+                  setAuthRole('admin');
+                  setIsLoggingInAsDriver(true);
+                }}
+              />
             </div>
           ) : !user && isLoggingInAsDriver ? (
             <div className="space-y-4 overflow-y-auto p-4 md:p-6 custom-scrollbar">
               <Button 
                 variant="ghost" 
-                onClick={() => setIsLoggingInAsDriver(false)}
+                onClick={() => {
+                  setIsLoggingInAsDriver(false);
+                  setAuthRole(null);
+                }}
                 className="gap-2 text-slate-500 font-bold hover:text-blue-600"
               >
                 <ChevronLeft className="w-4 h-4" /> Voltar para o Mapa
               </Button>
               <div className="max-w-md mx-auto">
-                <DriverAuth onAuthSuccess={onAuthSuccess} />
+                <DriverAuth 
+                  initialRole={authRole} 
+                  onAuthSuccess={onAuthSuccess} 
+                  onBack={() => {
+                    setIsLoggingInAsDriver(false);
+                    setAuthRole(null);
+                  }}
+                />
               </div>
             </div>
           ) : user?.role === 'driver' ? (
