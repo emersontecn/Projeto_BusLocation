@@ -34,6 +34,12 @@ export default function App() {
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
+    if (user?.role === 'admin') {
+      setViewMode('admin');
+    }
+  }, [user]);
+
+  useEffect(() => {
     // Carrega a configuração do serviço se houver
     const savedConfig = localStorage.getItem('service_config');
     if (savedConfig) {
@@ -55,31 +61,31 @@ export default function App() {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data() as UserProfile;
-          if (userData.email === ADMIN_EMAIL && userData.role !== 'driver') {
-            const adminUpdate = { ...userData, role: 'driver' as UserRole };
-            if (userData.name === 'Direção' || userData.name === 'Direção (emerson)') {
+          if (userData.email === ADMIN_EMAIL && userData.role !== 'admin') {
+            const adminUpdate = { ...userData, role: 'admin' as UserRole };
+            if (userData.name === 'Direção' || userData.name === 'Direção (emerson)' || !userData.name) {
               adminUpdate.name = 'Administrador';
             }
             await setDoc(doc(db, 'users', firebaseUser.uid), adminUpdate);
             setUser(adminUpdate);
           } else {
             let finalData = userData;
-            if (userData.email === ADMIN_EMAIL && (userData.name === 'Direção' || userData.name === 'Direção (emerson)')) {
+            if (userData.email === ADMIN_EMAIL && (userData.name === 'Direção' || userData.name === 'Direção (emerson)' || !userData.name)) {
               finalData = { ...userData, name: 'Administrador' };
               await setDoc(doc(db, 'users', firebaseUser.uid), finalData);
             }
             setUser(finalData);
           }
           
-          if (userData.name) {
+          if (userData.name && userData.role === 'driver') {
             setHasStartedShift(true);
           }
         } else {
           const newUser: UserProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
-            name: firebaseUser.displayName || '',
-            role: firebaseUser.email === ADMIN_EMAIL ? 'driver' : 'student'
+            name: firebaseUser.displayName || 'Administrador',
+            role: firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'student'
           };
           await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
           setUser(newUser);
@@ -205,11 +211,14 @@ export default function App() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => setIsLoggingInAsDriver(true)}
+                  onClick={() => {
+                    setAuthRole('admin');
+                    setIsLoggingInAsDriver(true);
+                  }}
                   className="gap-2 rounded-full font-bold border-2 border-slate-200 hover:border-blue-500 hover:text-blue-600 transition-all"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span className="hidden sm:inline">Acesso</span>
+                  <span className="hidden sm:inline">Acesso da Direção</span>
                 </Button>
               )
             )}
@@ -245,7 +254,7 @@ export default function App() {
               >
                 <ChevronLeft className="w-4 h-4" /> Voltar para o Mapa
               </Button>
-              <div className="max-w-md mx-auto">
+              <div className="max-w-xl mx-auto">
                 <DriverAuth 
                   initialRole={authRole} 
                   onAuthSuccess={onAuthSuccess} 

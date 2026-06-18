@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { DriverLog } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Calendar, User, Clock, Route as RouteIcon, Trash2, Search, X, Filter, ChevronDown } from 'lucide-react';
+import { Calendar, User, Clock, Route as RouteIcon, Trash2, Search, X, Filter, ChevronDown, Navigation } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from './ui/button';
@@ -98,6 +98,10 @@ export default function DriverLogs() {
   };
 
   const hasActiveFilters = filterDate !== '' || filterDriver !== 'all' || filterRoute !== 'all' || filterPeriod !== 'all' || searchTerm !== '';
+
+  const totalKms = useMemo(() => {
+    return filteredLogs.reduce((acc, log) => acc + (log.kmTraveled || 0), 0);
+  }, [filteredLogs]);
 
   if (loading) return <div className="p-8 text-center text-slate-400">Carregando histórico...</div>;
 
@@ -227,11 +231,17 @@ export default function DriverLogs() {
                 Registro dos turnos e viagens realizadas.
               </CardDescription>
             </div>
-            <div className="bg-white/10 px-2 py-1 rounded text-[10px] font-bold">
-              {filteredLogs.length} registros
+            <div className="text-right flex flex-col gap-1 items-end shrink-0">
+              <div className="bg-white/10 px-2.5 py-1 rounded text-[10px] font-black uppercase text-slate-200">
+                {filteredLogs.length} viagens
+              </div>
+              <div className="bg-blue-600 px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider text-white">
+                {totalKms.toFixed(1)} KM Total
+              </div>
             </div>
           </div>
         </CardHeader>
+        
         <CardContent className="p-0">
           <div className="divide-y divide-slate-100">
             {filteredLogs.length === 0 ? (
@@ -265,6 +275,10 @@ export default function DriverLogs() {
                           <span className="truncate">{log.routeName}</span>
                         </div>
                       )}
+                      <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold shrink-0">
+                        <Navigation className="w-2.5 h-2.5 text-blue-500 shrink-0 rotate-45" />
+                        <span>{(log.kmTraveled || 0).toFixed(1)} km</span>
+                      </div>
                     </div>
                   </div>
                   <Button 

@@ -18,6 +18,20 @@ import { Textarea } from './ui/textarea';
 
 const BELO_JARDIM_CENTER: [number, number] = [-8.3347, -36.4179];
 
+function calculateDistanceInKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Planet earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function DriverView({ user, serviceConfig }: { user: UserProfile, serviceConfig?: { type: ServiceType, entity?: string } }) {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>('');
@@ -33,6 +47,9 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
     if (rawName === 'Direção' || rawName === 'Direção (emerson)') return 'Administrador';
     return rawName;
   });
+  const [isEndTripDialogOpen, setIsEndTripDialogOpen] = useState(false);
+  const [kmInput, setKmInput] = useState('');
+  const [endingInProgress, setEndingInProgress] = useState(false);
 
   // Load all available routes for the selected service type if applicable
   useEffect(() => {
@@ -104,18 +121,50 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
 
   // Update location
   useEffect(() => {
-    if (!activeTrip) return;
+    const tripId = activeTrip?.id;
+    const shiftId = activeTrip?.shiftId;
+    if (!tripId) return;
+
+    let lastLat: number | null = null;
+    let lastLng: number | null = null;
+    let accumulatedKm = activeTrip?.kmTraveled || 0;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
         setCurrentLocation([latitude, longitude]);
         
-        updateDoc(doc(db, 'trips', activeTrip.id), {
+        let kmDelta = 0;
+        if (lastLat !== null && lastLng !== null) {
+          const distance = calculateDistanceInKm(lastLat, lastLng, latitude, longitude);
+          // Only accumulate if distance is positive, greater than 5 meters (0.005 km) to reduce GPS jitter, 
+          // and less than 2 km (to prevent sudden GPS coordinates jumps on first startup)
+          if (distance > 0.005 && distance < 2) {
+            kmDelta = distance;
+            accumulatedKm += kmDelta;
+          }
+        }
+
+        if (lastLat === null || lastLng === null) {
+          lastLat = latitude;
+          lastLng = longitude;
+        } else if (kmDelta > 0) {
+          lastLat = latitude;
+          lastLng = longitude;
+        }
+
+        updateDoc(doc(db, 'trips', tripId), {
           currentLat: latitude,
           currentLng: longitude,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
+          kmTraveled: Number(accumulatedKm.toFixed(2))
         });
+
+        if (shiftId) {
+          updateDoc(doc(db, 'shifts', shiftId), {
+            kmTraveled: Number(accumulatedKm.toFixed(2))
+          });
+        }
       },
       (err) => console.error(err),
       { 
@@ -126,7 +175,7 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [activeTrip]);
+  }, [activeTrip?.id]);
 
   const startTrip = async () => {
     if (!selectedRouteId || !driverNameInput.trim()) return;
@@ -157,7 +206,17 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
       
       const now = new Date();
       
-      // 1. Create the trip
+      // 1. Log the activity in 'shifts' for the administrator
+      const shiftRef = await addDoc(collection(db, 'shifts'), {
+        driverId: user.uid,
+        driverName: driverNameInput.trim(),
+        routeName: selectedRoute?.name || 'Rota Desconhecida',
+        date: format(now, 'dd/MM/yyyy', { locale: ptBR }),
+        startTime: serverTimestamp(),
+        kmTraveled: 0
+      });
+
+      // 2. Create the trip
       await addDoc(collection(db, 'trips'), {
         routeId: selectedRouteId,
         driverId: user.uid,
@@ -165,27 +224,48 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
         status: 'active',
         currentLat: latitude,
         currentLng: longitude,
-        lastUpdated: now.toISOString()
-      });
-
-      // 2. Log the activity in 'shifts' for the administrator
-      await addDoc(collection(db, 'shifts'), {
-        driverId: user.uid,
-        driverName: driverNameInput.trim(),
-        routeName: selectedRoute?.name || 'Rota Desconhecida',
-        date: format(now, 'dd/MM/yyyy', { locale: ptBR }),
-        startTime: serverTimestamp()
+        lastUpdated: now.toISOString(),
+        shiftId: shiftRef.id,
+        kmTraveled: 0
       });
     });
   };
 
   const endTrip = async () => {
     if (!activeTrip) return;
-    await updateDoc(doc(db, 'trips', activeTrip.id), {
-      status: 'completed',
-      lastUpdated: new Date().toISOString()
-    });
-    setActiveTrip(null);
+    setKmInput((activeTrip.kmTraveled || 0).toFixed(1));
+    setIsEndTripDialogOpen(true);
+  };
+
+  const confirmEndTrip = async () => {
+    if (!activeTrip) return;
+    setEndingInProgress(true);
+    try {
+      const km = activeTrip.kmTraveled || 0;
+      
+      // Update trip
+      await updateDoc(doc(db, 'trips', activeTrip.id), {
+        status: 'completed',
+        lastUpdated: new Date().toISOString(),
+        kmTraveled: km
+      });
+
+      // Update shifts/logs
+      if (activeTrip.shiftId) {
+        await updateDoc(doc(db, 'shifts', activeTrip.shiftId), {
+          endTime: serverTimestamp(),
+          kmTraveled: km
+        });
+      }
+
+      setActiveTrip(null);
+      setIsEndTripDialogOpen(false);
+      setKmInput('');
+    } catch (error) {
+      console.error("Error ending trip:", error);
+    } finally {
+      setEndingInProgress(false);
+    }
   };
 
   const sendAlert = async () => {
@@ -298,10 +378,15 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
                     </div>
                   ) : (
                     <div className="space-y-3 md:space-y-4">
-                      <div className="flex items-center gap-2 p-2.5 md:p-3 bg-green-50 rounded-xl border border-green-100">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        <span className="font-bold text-xs md:text-sm text-green-700 truncate">
-                          {routes.find(r => r.id === activeTrip.routeId)?.name}
+                      <div className="flex items-center justify-between p-2.5 md:p-3 bg-green-50 rounded-xl border border-green-100">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          <span className="font-bold text-xs md:text-sm text-green-700 truncate">
+                            {routes.find(r => r.id === activeTrip.routeId)?.name}
+                          </span>
+                        </div>
+                        <span className="text-xs font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">
+                          {(activeTrip.kmTraveled || 0).toFixed(2)} km
                         </span>
                       </div>
 
@@ -405,6 +490,49 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
             <Button variant="ghost" onClick={() => setIsAlertDialogOpen(false)} className="rounded-xl font-bold">Cancelar</Button>
             <Button variant="destructive" onClick={sendAlert} disabled={!customAlert.trim()} className="rounded-xl font-black bg-amber-500 hover:bg-amber-600 text-white">
               Enviar Alerta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG DE ENCERRAR ROTA COM QUILOMETROS */}
+      <Dialog open={isEndTripDialogOpen} onOpenChange={(open) => !open && setIsEndTripDialogOpen(false)}>
+        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black flex items-center gap-2">
+              <Navigation className="text-blue-600 animate-pulse w-5 h-5 rotate-45" />
+              Encerrar Rota
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Parabéns por concluir mais uma rota! A quilometragem total percorrida foi calculada automaticamente por geolocalização.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-center">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Distância Percorrida</span>
+              <span className="text-3xl font-black text-blue-600 block">
+                {(activeTrip?.kmTraveled || 0).toFixed(2)} <span className="text-sm font-bold text-slate-500 font-sans">km</span>
+              </span>
+              <span className="text-[10px] text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full mt-2 inline-block">
+                ✓ Calculado automaticamente por GPS
+              </span>
+            </div>
+          </div>
+          <DialogFooter className="grid grid-cols-2 gap-3 mt-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEndTripDialogOpen(false)} 
+              className="h-12 rounded-xl font-bold border-slate-200"
+              disabled={endingInProgress}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmEndTrip} 
+              disabled={endingInProgress} 
+              className="h-12 rounded-xl font-black bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-100"
+            >
+              {endingInProgress ? 'Encerrando...' : 'Confirmar'}
             </Button>
           </DialogFooter>
         </DialogContent>

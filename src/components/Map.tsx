@@ -2,7 +2,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, Navigation } from 'lucide-react';
 import { Stop } from '../types';
 
 const getTileUrl = (style: 'google-roads' | 'google-hybrid' | 'google-traffic' | 'osm') => {
@@ -116,8 +116,27 @@ function MapEvents({ onClick }: { onClick?: (lat: number, lng: number) => void }
   return null;
 }
 
-function ChangeView({ center, zoom }: { center: [number, number]; zoom: number }) {
+function ChangeView({ 
+  center, 
+  zoom, 
+  userInteracted, 
+  setUserInteracted 
+}: { 
+  center: [number, number]; 
+  zoom: number; 
+  userInteracted: boolean; 
+  setUserInteracted: (val: boolean) => void 
+}) {
   const map = useMap();
+  
+  useMapEvents({
+    dragstart: () => {
+      setUserInteracted(true);
+    },
+    zoomstart: () => {
+      setUserInteracted(true);
+    }
+  });
   
   // Force invalidateSize to fix gray areas on layout changes
   useEffect(() => {
@@ -129,6 +148,8 @@ function ChangeView({ center, zoom }: { center: [number, number]; zoom: number }
 
   // Update center when it changes, but keep current zoom level
   useEffect(() => {
+    if (userInteracted) return;
+
     // Only move if the distance is significant to avoid jitter
     const currentCenter = map.getCenter();
     const distSq = Math.pow(currentCenter.lat - center[0], 2) + Math.pow(currentCenter.lng - center[1], 2);
@@ -140,12 +161,13 @@ function ChangeView({ center, zoom }: { center: [number, number]; zoom: number }
         easeLinearity: 0.25
       });
     }
-  }, [center, map]);
+  }, [center, map, userInteracted]);
 
   // Update zoom only when the zoom prop explicitly changes
   useEffect(() => {
+    if (userInteracted) return;
     map.setZoom(zoom);
-  }, [zoom, map]);
+  }, [zoom, map, userInteracted]);
 
   return null;
 }
@@ -292,12 +314,68 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
   const [passingStopId, setPassingStopId] = useState<string | null>(null);
   const [detectionRadius, setDetectionRadius] = useState<number>(75); // dynamic meter range for API tracking!
 
+  const [userInteracted, setUserInteracted] = useState(false);
+  const [interpolatedBusLocation, setInterpolatedBusLocation] = useState<[number, number] | undefined>(busLocation);
+
   // Reset passed stops tracking when the route/stops array changes
   const stopsHash = stops.map(s => s.id).join(',');
   useEffect(() => {
     setPassedStopIds([]);
     setPassingStopId(null);
   }, [stopsHash]);
+
+  // Smoothly interpolate the bus location
+  useEffect(() => {
+    if (!busLocation) {
+      setInterpolatedBusLocation(undefined);
+      return;
+    }
+    if (!interpolatedBusLocation) {
+      setInterpolatedBusLocation(busLocation);
+      return;
+    }
+
+    const startLat = interpolatedBusLocation[0];
+    const startLng = interpolatedBusLocation[1];
+    const endLat = busLocation[0];
+    const endLng = busLocation[1];
+
+    // If change is extremely tiny, set immediately and skip animation
+    const latDiff = Math.abs(endLat - startLat);
+    const lngDiff = Math.abs(endLng - startLng);
+    if (latDiff < 0.000001 && lngDiff < 0.000001) {
+      setInterpolatedBusLocation(busLocation);
+      return;
+    }
+
+    const duration = 2000; // interpolate over 2 seconds (updates generally arrive every 2-3s)
+    const startTime = performance.now();
+
+    let animationId: number;
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Smooth step using quadratic ease out
+      const t = progress * (2 - progress);
+
+      const currentLat = startLat + (endLat - startLat) * t;
+      const currentLng = startLng + (endLng - startLng) * t;
+
+      setInterpolatedBusLocation([currentLat, currentLng]);
+
+      if (progress < 1) {
+        animationId = requestAnimationFrame(animate);
+      }
+    };
+
+    animationId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [busLocation]);
 
   // Track the bus position relative to each stop in real-time
   useEffect(() => {
@@ -345,11 +423,16 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           attribution={getAttribution(mapStyle)}
           url={getTileUrl(mapStyle)}
         />
-        <ChangeView center={center} zoom={zoom} />
+        <ChangeView 
+          center={center} 
+          zoom={zoom} 
+          userInteracted={userInteracted} 
+          setUserInteracted={setUserInteracted} 
+        />
         <MapEvents onClick={onMapClick} />
         
-        {busLocation && (
-          <Marker position={busLocation} icon={busIcon}>
+        {interpolatedBusLocation && (
+          <Marker position={interpolatedBusLocation} icon={busIcon}>
             <Popup>Ônibus em tempo real</Popup>
           </Marker>
         )}
@@ -358,6 +441,19 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           <Marker position={pendingStop} icon={defaultIcon}>
             <Popup>Novo Ponto Selecionado</Popup>
           </Marker>
+        )}
+
+        {userInteracted && busLocation && (
+          <div className="absolute bottom-6 left-6 z-[1000]">
+            <button
+              type="button"
+              onClick={() => setUserInteracted(false)}
+              className="flex items-center gap-2 bg-blue-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all outline-none cursor-pointer border-0"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              Centralizar no Ônibus
+            </button>
+          </div>
         )}
 
         {routeGeometry && routeGeometry.length > 1 && (() => {
@@ -538,112 +634,12 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
         <div className={`space-y-2.5 text-[10px] sm:text-xs text-slate-600 leading-relaxed transition-all duration-300 ease-in-out origin-bottom ${
           isLegendExpanded ? 'max-h-[500px] opacity-100 scale-100' : 'max-h-0 opacity-0 scale-95 overflow-hidden pointer-events-none'
         }`}>
-          {/* Seletor de API / Estilo de Mapa */}
-          <div className="border-b border-slate-100 pb-2 mb-1 bg-slate-50/50 p-1.5 rounded-xl border border-slate-100/50">
-            <div className="flex items-center gap-1 mb-1.5 text-[9px] font-black text-slate-700 uppercase tracking-widest">
-              <Layers className="w-3 h-3 text-blue-600 shrink-0" />
-              <span>Estilo de Mapa</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1 text-[8px] sm:text-[9px] font-bold">
-              <button
-                onClick={() => setMapStyle('google-roads')}
-                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
-                  mapStyle === 'google-roads'
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-200/50'
-                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
-                }`}
-                title="Google Maps Vetorizado - Altamente Preciso"
-              >
-                Google Maps
-              </button>
-              <button
-                onClick={() => setMapStyle('google-traffic')}
-                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
-                  mapStyle === 'google-traffic'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200/50'
-                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
-                }`}
-                title="Google Maps com Tráfego Realtime - Excelente para ver mãos e fluxo"
-              >
-                G. Trânsito
-              </button>
-              <button
-                onClick={() => setMapStyle('google-hybrid')}
-                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
-                  mapStyle === 'google-hybrid'
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-200/50'
-                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
-                }`}
-                title="Google Satélite com arruamento híbrido preciso"
-              >
-                Satélite HD
-              </button>
-              <button
-                onClick={() => setMapStyle('osm')}
-                className={`py-1 px-1 rounded-md text-center transition-all duration-200 outline-none select-none cursor-pointer border ${
-                  mapStyle === 'osm'
-                    ? 'bg-slate-700 text-white border-slate-700 shadow-sm shadow-slate-200/50'
-                    : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-200/65'
-                }`}
-                title="OpenStreetMap Clássico"
-              >
-                OpenStreet
-              </button>
-            </div>
-          </div>
-
-          {/* Seletor de Precisão da API / GPS */}
-          <div className="border-b border-slate-100 pb-2 mb-1.5 bg-sky-50/50 p-1.5 rounded-xl border border-sky-100/50">
-            <div className="flex items-center gap-1 mb-1.5 text-[9px] font-black text-sky-800 uppercase tracking-widest">
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-sky-500"></span>
-              </span>
-              <span>Precisão GPS / Detecção</span>
-            </div>
-            <div className="grid grid-cols-3 gap-0.5 text-[7px] sm:text-[8px] font-bold">
-              <button
-                onClick={() => setDetectionRadius(30)}
-                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
-                  detectionRadius === 30
-                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
-                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
-                }`}
-                title="Alta Precisão (30m) - Ideal para vias urbanas densas"
-              >
-                Fina (30m)
-              </button>
-              <button
-                onClick={() => setDetectionRadius(75)}
-                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
-                  detectionRadius === 75
-                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
-                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
-                }`}
-                title="Média Precisão (75m) - Recomendado"
-              >
-                Padrão (75m)
-              </button>
-              <button
-                onClick={() => setDetectionRadius(150)}
-                className={`py-1 px-0.5 rounded text-center transition-all duration-200 outline-none cursor-pointer border ${
-                  detectionRadius === 150
-                    ? 'bg-sky-600 text-white border-sky-600 shadow-sm shadow-sky-100'
-                    : 'bg-white hover:bg-sky-50 text-slate-600 border-slate-200/65'
-                }`}
-                title="Ampla Precisão (150m) - Ideal para distritos ou rodovias rápidas"
-              >
-                Ampla (150m)
-              </button>
-            </div>
-          </div>
-
           {/* Mão de Ida */}
           <div className="flex items-start gap-2 pt-0.5">
             <div className="flex flex-col items-center gap-0.5 pt-1">
               <div className="w-7 h-1.5 bg-blue-600 rounded"></div>
               <div className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-600 shadow-sm border border-white">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4" className="w-1.5 h-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={4} className="w-1.5 h-1.5">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
               </div>
@@ -659,7 +655,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
             <div className="flex flex-col items-center gap-0.5 pt-1">
               <div className="w-7 h-1.5 border-t-[3px] border-dashed border-indigo-600"></div>
               <div className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-indigo-600 shadow-sm border border-dashed border-indigo-200">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4" className="w-1.5 h-1.5 transform rotate-180">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={4} className="w-1.5 h-1.5 transform rotate-180">
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
               </div>
@@ -693,7 +689,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
 
             <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-full bg-slate-400 border border-slate-200 shadow flex items-center justify-center text-white shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
               </span>
               <div>
                 <p className="font-bold text-slate-700 leading-none">Ponto Visitado</p>

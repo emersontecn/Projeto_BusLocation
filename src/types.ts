@@ -41,6 +41,8 @@ export interface Trip {
   currentLng: number;
   lastUpdated: string;
   alert?: string;
+  shiftId?: string;
+  kmTraveled?: number;
 }
 
 export interface DriverLog {
@@ -51,5 +53,6 @@ export interface DriverLog {
   routeName?: string;
   startTime: any; // Firestore Timestamp
   endTime?: any; // Firestore Timestamp
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD/eeee, dd/MM
+  kmTraveled?: number;
 }

@@ -18,15 +18,17 @@ export function AccessibilityMenu() {
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button 
-          variant="outline" 
-          size="icon" 
-          className="rounded-full w-8 h-8 md:w-9 md:h-9 border-2 border-slate-200 hover:border-blue-500 hover:text-blue-600 transition-all"
-          title="Acessibilidade"
-        >
-          <Accessibility className="w-4 h-4 md:w-5 md:h-5 text-slate-600" />
-        </Button>
+      <DialogTrigger
+        render={
+          <Button 
+            variant="outline" 
+            size="icon" 
+            className="rounded-full w-8 h-8 md:w-9 md:h-9 border-2 border-slate-200 hover:border-blue-500 hover:text-blue-600 transition-all"
+            title="Acessibilidade"
+          />
+        }
+      >
+        <Accessibility className="w-4 h-4 md:w-5 md:h-5 text-slate-600" />
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px] rounded-3xl max-h-[90vh] overflow-y-auto custom-scrollbar">
         <DialogHeader>

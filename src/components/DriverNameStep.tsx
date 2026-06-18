@@ -45,7 +45,7 @@ export default function DriverNameStep({ user, onComplete, serviceConfig }: Driv
 
   return (
     <div className="flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-0 shadow-2xl bg-white/80 backdrop-blur-sm">
+      <Card className="w-full max-w-xl border-0 shadow-2xl bg-white/80 backdrop-blur-sm">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-2">
             <div className="p-3 bg-green-100 rounded-full">
