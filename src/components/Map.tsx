@@ -443,18 +443,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
           </Marker>
         )}
 
-        {userInteracted && busLocation && (
-          <div className="absolute bottom-4 right-20 z-[1000]">
-            <button
-              type="button"
-              onClick={() => setUserInteracted(false)}
-              className="flex items-center gap-2 bg-blue-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all outline-none cursor-pointer border-0 whitespace-nowrap"
-            >
-              <Navigation className="w-3.5 h-3.5" />
-              Centralizar no Ônibus
-            </button>
-          </div>
-        )}
+
 
         {routeGeometry && routeGeometry.length > 1 && (() => {
           // Offset the outbound path slightly to place it on its correct lane
