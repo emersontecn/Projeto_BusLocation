@@ -307,7 +307,7 @@ export default function App() {
                 <DriverNameStep user={user} onComplete={onNameStepComplete} serviceConfig={serviceConfig || undefined} />
               </div>
             ) : (
-              <div className="flex-1 overflow-hidden relative">
+              <div className="flex-1 h-full w-full overflow-hidden relative flex flex-col">
                 <DriverView user={user} serviceConfig={serviceConfig || undefined} />
               </div>
             )
@@ -318,7 +318,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 h-full w-full overflow-hidden relative flex flex-col">
               <StudentView serviceType={serviceConfig?.type} entityName={serviceConfig?.entity} />
             </div>
           )}
@@ -592,11 +592,7 @@ export default function App() {
         </DialogContent>
       </Dialog>
 
-      {!user?.role && (
-        <footer className="py-4 text-center text-slate-400 text-[10px] border-t border-slate-100 bg-white">
-          <p className="font-bold text-slate-500">&copy; 2026 BusBJ - Belo Jardim, PE</p>
-        </footer>
-      )}
+
     </div>
     </AccessibilityProvider>
   );

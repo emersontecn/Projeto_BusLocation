@@ -412,11 +412,11 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
   }, [busLocation, stops, detectionRadius]);
 
   return (
-    <div className={`relative ${className || ''}`} style={{ height: '100%', width: '100%', minHeight: '300px' }}>
+    <div className={`relative ${className || ''}`} style={{ height: '100%', width: '100%' }}>
       <MapContainer
         center={center}
         zoom={zoom}
-        style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
+        style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
           key={mapStyle}
@@ -444,11 +444,11 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
         )}
 
         {userInteracted && busLocation && (
-          <div className="absolute bottom-6 left-6 z-[1000]">
+          <div className="absolute bottom-4 right-20 z-[1000]">
             <button
               type="button"
               onClick={() => setUserInteracted(false)}
-              className="flex items-center gap-2 bg-blue-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all outline-none cursor-pointer border-0"
+              className="flex items-center gap-2 bg-blue-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all outline-none cursor-pointer border-0 whitespace-nowrap"
             >
               <Navigation className="w-3.5 h-3.5" />
               Centralizar no Ônibus
