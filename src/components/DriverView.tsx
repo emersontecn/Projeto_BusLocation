@@ -293,7 +293,7 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
   }, [selectedRouteId]);
 
   return (
-    <div className="relative flex-1 h-full w-full rounded-2xl md:rounded-3xl overflow-hidden border-2 md:border-4 border-white shadow-2xl bg-white min-h-[680px]">
+    <div className="relative flex-1 h-full w-full rounded-none sm:rounded-2xl md:rounded-3xl overflow-hidden border-0 sm:border-2 md:border-4 border-white shadow-none sm:shadow-2xl bg-white min-h-[500px] md:min-h-[680px]">
       {/* MAPA - Elemento Primário */}
       <div className="absolute inset-0 z-0">
         <Map 

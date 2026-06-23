@@ -156,8 +156,16 @@ export default function StudentView({ serviceType, entityName }: StudentViewProp
   const [isRoutesExpanded, setIsRoutesExpanded] = useState(true);
   const [isStopsExpanded, setIsStopsExpanded] = useState(false);
 
+  // Auto-collapse routes list on mobile when a trip is selected so the info card rises up and doesn't get cut off
+  useEffect(() => {
+    if (selectedTripId && window.innerWidth < 640) {
+      setIsRoutesExpanded(false);
+      setIsStopsExpanded(true);
+    }
+  }, [selectedTripId]);
+
   return (
-    <div className="relative flex-1 h-full w-full rounded-2xl md:rounded-3xl overflow-hidden border-2 md:border-4 border-white shadow-2xl bg-white min-h-[680px]">
+    <div className="relative flex-1 h-full w-full rounded-none sm:rounded-2xl md:rounded-3xl overflow-hidden border-0 sm:border-2 md:border-4 border-white shadow-none sm:shadow-2xl bg-white min-h-[500px] md:min-h-[680px]">
       {/* MAPA - Elemento Primário (Fundo) */}
       <div className="absolute inset-0 z-0">
         <Map 

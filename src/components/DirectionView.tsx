@@ -9,7 +9,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import DriverLogs from './DriverLogs';
 import RouteManager from './RouteManager';
-import { UserPlus, Users, Trash2, ShieldCheck, Mail, User as UserIcon, Loader2, CheckCircle2, History, Eraser, Key, Map as MapIcon, AlertTriangle, GraduationCap, Search, Pencil, MapPin, Phone, Clock, Globe } from 'lucide-react';
+import { UserPlus, Users, Trash2, ShieldCheck, Mail, User as UserIcon, Loader2, CheckCircle2, History, Eraser, Key, Map as MapIcon, AlertTriangle, GraduationCap, Search, Pencil, MapPin, Phone, Clock, Globe, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 
 interface DirectionViewProps {
@@ -79,6 +79,64 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
   const [schoolSearchTerm, setSchoolSearchTerm] = useState('');
   const [schoolPage, setSchoolPage] = useState(1);
 
+  // Cidades do Brasil (IBGE)
+  const [allCities, setAllCities] = useState<{ name: string; uf: string }[]>([]);
+  const [loadingCities, setLoadingCities] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+
+  const fetchCities = async () => {
+    if (allCities.length > 0) return;
+    setLoadingCities(true);
+    try {
+      const response = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome');
+      if (response.ok) {
+        const data = await response.json();
+        const formatted = data.map((item: any) => ({
+          name: item.nome,
+          uf: item.microrregiao?.mesorregiao?.UF?.sigla || item.regiaoImediata?.subregiaoImediata?.regiaoIntermediaria?.UF?.sigla || 'PE'
+        }));
+        setAllCities(formatted);
+      } else {
+        throw new Error('Falha na resposta do servidor IBGE');
+      }
+    } catch (err) {
+      console.error("Erro ao carregar cidades do IBGE:", err);
+      // Fallback robusto com cidades de Pernambuco
+      setAllCities([
+        { name: "Belo Jardim", uf: "PE" },
+        { name: "Caruaru", uf: "PE" },
+        { name: "Recife", uf: "PE" },
+        { name: "Sanharó", uf: "PE" },
+        { name: "Tacaimbó", uf: "PE" },
+        { name: "São Bento do Una", uf: "PE" },
+        { name: "Pesqueira", uf: "PE" },
+        { name: "Gravatá", uf: "PE" },
+        { name: "Garanhuns", uf: "PE" },
+        { name: "Arcoverde", uf: "PE" },
+        { name: "Toritama", uf: "PE" },
+        { name: "Santa Cruz do Capibaribe", uf: "PE" }
+      ]);
+    } finally {
+      setLoadingCities(false);
+    }
+  };
+
+  const filteredCitySuggestions = React.useMemo(() => {
+    if (!newSchoolCity || newSchoolCity.trim().length === 0) return [];
+    const term = newSchoolCity.toLowerCase();
+    return allCities
+      .filter(c => 
+        c.name.toLowerCase().includes(term) || 
+        `${c.name} - ${c.uf}`.toLowerCase().includes(term)
+      )
+      .slice(0, 50);
+  }, [newSchoolCity, allCities]);
+
+  const handleSelectCity = (city: { name: string; uf: string }) => {
+    setNewSchoolCity(`${city.name} - ${city.uf}`);
+    setShowCitySuggestions(false);
+  };
+
   const ADMIN_EMAIL = 'emerson0712002@gmail.com';
 
   useEffect(() => {
@@ -99,6 +157,76 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
     return () => unsubscribe();
   }, []);
 
+  const handleLoadDefaultSchools = async () => {
+    setLoadingSchools(true);
+    setSchoolStatus(null);
+    try {
+      const defaultBeloJardimSchools = [
+        {
+          name: "IFPE",
+          inep: "26141360",
+          city: "Belo Jardim",
+          address: "Av. Sebastião Rodrigues da Costa, s/n - Manoel Valdevino",
+          phone: "(81) 3411-3200",
+          responsible: "Direção Geral",
+          arrivalTime: "07:30",
+          departureTime: "22:15",
+          latitude: -8.3204,
+          longitude: -36.4172,
+          status: "active"
+        },
+        {
+          name: "UFRPE/UABJ",
+          inep: "26402312",
+          city: "Belo Jardim",
+          address: "Av. Dr. Sebastião Cabral, s/n - Centro",
+          phone: "(81) 3726-8700",
+          responsible: "Secretaria de Curso",
+          arrivalTime: "07:30",
+          departureTime: "22:00",
+          latitude: -8.3347,
+          longitude: -36.4179,
+          status: "active"
+        },
+        {
+          name: "ETE",
+          inep: "26154320",
+          city: "Belo Jardim",
+          address: "PE-166, Km 02, s/n - Aeroporto",
+          phone: "(81) 3726-8480",
+          responsible: "Diretoria Técnica",
+          arrivalTime: "07:30",
+          departureTime: "17:00",
+          latitude: -8.3115,
+          longitude: -36.4190,
+          status: "active"
+        }
+      ];
+
+      let addedCount = 0;
+      for (const sch of defaultBeloJardimSchools) {
+        // Check if school already exists by INEP
+        const exists = schools.some(s => s.inep === sch.inep);
+        if (!exists) {
+          const schoolId = `school_${sch.inep}`;
+          await setDoc(doc(db, 'schools', schoolId), sch);
+          addedCount++;
+        }
+      }
+
+      if (addedCount > 0) {
+        setSchoolStatus({ type: 'success', message: `${addedCount} escolas padrão da região foram adicionadas com sucesso!` });
+      } else {
+        setSchoolStatus({ type: 'success', message: 'Todas as escolas padrão já estão cadastradas no sistema.' });
+      }
+    } catch (err) {
+      console.error("Error seeding schools:", err);
+      setSchoolStatus({ type: 'error', message: 'Erro ao carregar as escolas padrão.' });
+    } finally {
+      setLoadingSchools(false);
+    }
+  };
+
   const handleCreateSchool = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingSchools(true);
@@ -110,8 +238,6 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
         !newSchoolInep.trim() || 
         !newSchoolCity.trim() || 
         !schoolAddress.trim() ||
-        !schoolLatitude.trim() ||
-        !schoolLongitude.trim() ||
         !schoolArrivalTime.trim() ||
         !schoolDepartureTime.trim()
       ) {
@@ -120,8 +246,8 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
         return;
       }
 
-      const parsedLat = parseFloat(schoolLatitude);
-      const parsedLng = parseFloat(schoolLongitude);
+      const parsedLat = schoolLatitude.trim() ? parseFloat(schoolLatitude) : -8.3347;
+      const parsedLng = schoolLongitude.trim() ? parseFloat(schoolLongitude) : -36.4179;
       if (isNaN(parsedLat) || isNaN(parsedLng)) {
         setSchoolStatus({ type: 'error', message: 'As coordenadas latitude e longitude devem ser números válidos.' });
         setLoadingSchools(false);
@@ -528,25 +654,25 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
           <ShieldCheck className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
           Painel Administrativo
         </h1>
-        <p className="text-xs md:text-sm text-slate-500 font-medium lowercase md:capitalize">Gestão centralizada de motoristas e rotas.</p>
+        <p className="text-xs md:text-sm text-slate-500 font-medium">Gestão centralizada de motoristas e rotas.</p>
       </div>
 
       <Tabs defaultValue="management" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 gap-1 mb-4 md:mb-8 h-auto bg-slate-200 p-1 rounded-xl sticky top-0 z-10 shadow-sm sm:static">
-          <TabsTrigger value="management" className="flex items-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[10px] sm:text-sm py-2">
-            <Users className="w-3.5 h-3.5 md:w-4 md:h-4" /> Motoristas
+        <TabsList className="flex flex-wrap md:grid md:grid-cols-5 gap-1.5 mb-4 md:mb-8 h-auto bg-slate-200 p-1.5 rounded-xl sticky top-0 z-10 shadow-sm sm:static">
+          <TabsTrigger value="management" className="flex-1 min-w-[110px] sm:min-w-0 shrink-0 flex items-center justify-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[11px] sm:text-xs md:text-sm py-1.5 sm:py-2 px-2 sm:px-3 md:px-1 whitespace-nowrap">
+            <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> Motoristas
           </TabsTrigger>
-          <TabsTrigger value="routes" className="flex items-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[10px] sm:text-sm py-2">
-            <MapIcon className="w-3.5 h-3.5 md:w-4 md:h-4" /> Rotas
+          <TabsTrigger value="routes" className="flex-1 min-w-[100px] sm:min-w-0 shrink-0 flex items-center justify-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[11px] sm:text-xs md:text-sm py-1.5 sm:py-2 px-2 sm:px-3 md:px-1 whitespace-nowrap">
+            <MapIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> Rotas
           </TabsTrigger>
-          <TabsTrigger value="schools" className="flex items-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[10px] sm:text-sm py-2">
-            <GraduationCap className="w-3.5 h-3.5 md:w-4 md:h-4" /> Escolas
+          <TabsTrigger value="schools" className="flex-1 min-w-[100px] sm:min-w-0 shrink-0 flex items-center justify-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[11px] sm:text-xs md:text-sm py-1.5 sm:py-2 px-2 sm:px-3 md:px-1 whitespace-nowrap">
+            <GraduationCap className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> Escolas
           </TabsTrigger>
-          <TabsTrigger value="history" className="flex items-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[10px] sm:text-sm py-2">
-            <History className="w-3.5 h-3.5 md:w-4 md:h-4" /> Histórico
+          <TabsTrigger value="history" className="flex-1 min-w-[100px] sm:min-w-0 shrink-0 flex items-center justify-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[11px] sm:text-xs md:text-sm py-1.5 sm:py-2 px-2 sm:px-3 md:px-1 whitespace-nowrap">
+            <History className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> Histórico
           </TabsTrigger>
-          <TabsTrigger value="admins" className="flex items-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[10px] sm:text-sm py-2">
-            <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4" /> Admins
+          <TabsTrigger value="admins" className="flex-1 min-w-[100px] sm:min-w-0 shrink-0 flex items-center justify-center gap-1 md:gap-2 rounded-lg data-[active]:bg-white data-[active]:text-blue-600 data-[state=active]:bg-white data-[state=active]:text-blue-600 font-bold text-[11px] sm:text-xs md:text-sm py-1.5 sm:py-2 px-2 sm:px-3 md:px-1 whitespace-nowrap">
+            <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" /> Admins
           </TabsTrigger>
         </TabsList>
 
@@ -567,6 +693,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-4 md:p-6 pt-6">
+                <>
                 {schoolStatus && (
                   <div className={`mb-4 p-3 rounded-xl border font-bold text-xs md:text-sm flex items-center gap-2 ${
                     schoolStatus.type === 'success' 
@@ -577,165 +704,190 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                     {schoolStatus.message}
                   </div>
                 )}
-                
-                <form onSubmit={handleCreateSchool} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5 col-span-1 sm:col-span-2">
-                      <Label htmlFor="school-name" className="text-slate-700 font-bold text-xs md:text-sm">Nome da Escola *</Label>
-                      <Input 
-                        id="school-name"
-                        placeholder="Ex: Escola Técnica Estadual" 
-                        value={newSchoolName}
-                        onChange={(e) => setNewSchoolName(e.target.value)}
-                        required
-                        maxLength={100}
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-                    
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-inep" className="text-slate-700 font-bold text-xs md:text-sm">Código/INEP *</Label>
-                      <Input 
-                        id="school-inep"
-                        placeholder="Ex: 26115042" 
-                        value={newSchoolInep}
-                        onChange={(e) => setNewSchoolInep(e.target.value)}
-                        required
-                        maxLength={20}
-                        className="rounded-xl border-slate-200 h-10 font-mono text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-city" className="text-slate-700 font-bold text-xs md:text-sm">Cidade/Região *</Label>
-                      <Input 
-                        id="school-city"
-                        placeholder="Ex: Belo Jardim - PE" 
-                        value={newSchoolCity}
-                        onChange={(e) => setNewSchoolCity(e.target.value)}
-                        required
-                        maxLength={100}
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 col-span-1 sm:col-span-2">
-                      <Label htmlFor="school-address" className="text-slate-700 font-bold text-xs md:text-sm">Endereço da Escola *</Label>
-                      <Input 
-                        id="school-address"
-                        placeholder="Ex: Av. Dep. Fábio Corrêa, 560, Centro" 
-                        value={schoolAddress}
-                        onChange={(e) => setSchoolAddress(e.target.value)}
-                        required
-                        maxLength={200}
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-lat" className="text-slate-700 font-bold text-xs md:text-sm">Latitude *</Label>
-                      <Input 
-                        id="school-lat"
-                        type="number"
-                        step="any"
-                        placeholder="Ex: -8.3347" 
-                        value={schoolLatitude}
-                        onChange={(e) => setSchoolLatitude(e.target.value)}
-                        required
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-lng" className="text-slate-700 font-bold text-xs md:text-sm">Longitude *</Label>
-                      <Input 
-                        id="school-lng"
-                        type="number"
-                        step="any"
-                        placeholder="Ex: -36.4179" 
-                        value={schoolLongitude}
-                        onChange={(e) => setSchoolLongitude(e.target.value)}
-                        required
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-phone" className="text-slate-700 font-bold text-xs md:text-sm">Telefone de Contato (opcional)</Label>
-                      <Input 
-                        id="school-phone"
-                        placeholder="Ex: (81) 98765-4321" 
-                        value={schoolPhone}
-                        onChange={(e) => setSchoolPhone(e.target.value)}
-                        maxLength={25}
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-resp" className="text-slate-700 font-bold text-xs md:text-sm">Responsável Transporte (opcional)</Label>
-                      <Input 
-                        id="school-resp"
-                        placeholder="Ex: Maria Silva" 
-                        value={schoolResponsible}
-                        onChange={(e) => setSchoolResponsible(e.target.value)}
-                        maxLength={80}
-                        className="rounded-xl border-slate-200 h-10 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-in" className="text-slate-700 font-bold text-xs md:text-sm">Horário de Entrada *</Label>
-                      <Input 
-                        id="school-in"
-                        type="time"
-                        value={schoolArrivalTime}
-                        onChange={(e) => setSchoolArrivalTime(e.target.value)}
-                        required
-                        className="rounded-xl border-slate-200 h-10 text-sm font-bold"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="school-out" className="text-slate-700 font-bold text-xs md:text-sm">Horário de Saída *</Label>
-                      <Input 
-                        id="school-out"
-                        type="time"
-                        value={schoolDepartureTime}
-                        onChange={(e) => setSchoolDepartureTime(e.target.value)}
-                        required
-                        className="rounded-xl border-slate-200 h-10 text-sm font-bold"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 col-span-1 sm:col-span-2">
-                      <Label className="text-slate-700 font-bold text-xs md:text-sm block">Status da Escola</Label>
-                      <div className="flex gap-4 mt-1">
-                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                          <input 
-                            type="radio" 
-                            name="school-status" 
-                            checked={schoolIsActive === true} 
-                            onChange={() => setSchoolIsActive(true)}
-                            className="text-blue-600 focus:ring-blue-500" 
-                          />
-                          Ativa
-                        </label>
-                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                          <input 
-                            type="radio" 
-                            name="school-status" 
-                            checked={schoolIsActive === false} 
-                            onChange={() => setSchoolIsActive(false)}
-                            className="text-red-500 focus:ring-red-500"
-                          />
-                          Inativa
-                        </label>
+                  <form onSubmit={handleCreateSchool} className="space-y-5">
+                  {/* Seção 1: Identificação */}
+                  <div className="space-y-3 bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-200/60">
+                    <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-wide flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
+                      <GraduationCap className="w-3.5 h-3.5 text-blue-500" /> Identificação da Escola
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1 col-span-1 sm:col-span-2">
+                        <Label htmlFor="school-name" className="text-slate-700 font-bold text-xs">Nome da Escola *</Label>
+                        <Input 
+                          id="school-name"
+                          placeholder="Ex: Escola Técnica Estadual" 
+                          value={newSchoolName}
+                          onChange={(e) => setNewSchoolName(e.target.value)}
+                          required
+                          maxLength={100}
+                          className="rounded-xl border-slate-200 h-10 text-sm bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="school-inep" className="text-slate-700 font-bold text-xs">Código/INEP *</Label>
+                        <Input 
+                          id="school-inep"
+                          placeholder="Ex: 26115042" 
+                          value={newSchoolInep}
+                          onChange={(e) => setNewSchoolInep(e.target.value)}
+                          required
+                          maxLength={20}
+                          className="rounded-xl border-slate-200 h-10 font-mono text-sm bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="school-resp" className="text-slate-700 font-bold text-xs">Responsável Transporte (opcional)</Label>
+                        <Input 
+                          id="school-resp"
+                          placeholder="Ex: Maria Silva" 
+                          value={schoolResponsible}
+                          onChange={(e) => setSchoolResponsible(e.target.value)}
+                          maxLength={80}
+                          className="rounded-xl border-slate-200 h-10 text-sm bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1 col-span-1 sm:col-span-2">
+                        <Label htmlFor="school-phone" className="text-slate-700 font-bold text-xs">Telefone de Contato (opcional)</Label>
+                        <Input 
+                          id="school-phone"
+                          placeholder="Ex: (81) 98765-4321" 
+                          value={schoolPhone}
+                          onChange={(e) => setSchoolPhone(e.target.value)}
+                          maxLength={25}
+                          className="rounded-xl border-slate-200 h-10 text-sm bg-white focus-visible:ring-blue-500"
+                        />
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-4">
+                  {/* Seção 2: Localização */}
+                  <div className="space-y-3 bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-200/60">
+                    <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-wide flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-red-500" /> Localização & Endereço
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1 col-span-1 sm:col-span-2">
+                        <Label htmlFor="school-address" className="text-slate-700 font-bold text-xs">Endereço da Escola *</Label>
+                        <Input 
+                          id="school-address"
+                          placeholder="Ex: Av. Dep. Fábio Corrêa, 560, Centro" 
+                          value={schoolAddress}
+                          onChange={(e) => setSchoolAddress(e.target.value)}
+                          required
+                          maxLength={200}
+                          className="rounded-xl border-slate-200 h-10 text-sm bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1 col-span-1 sm:col-span-2 relative">
+                        <Label htmlFor="school-city" className="text-slate-700 font-bold text-xs">Cidade/Região *</Label>
+                        <Input 
+                          id="school-city"
+                          placeholder="Digite para buscar a cidade... Ex: Belo Jardim - PE" 
+                          value={newSchoolCity}
+                          onChange={(e) => {
+                            setNewSchoolCity(e.target.value);
+                            setShowCitySuggestions(true);
+                          }}
+                          onFocus={() => {
+                            fetchCities();
+                            setShowCitySuggestions(true);
+                          }}
+                          onBlur={() => {
+                            // Slight delay to allow clicking a suggestion before selection registers
+                            setTimeout(() => setShowCitySuggestions(false), 200);
+                          }}
+                          required
+                          maxLength={100}
+                          className="rounded-xl border-slate-200 h-10 text-sm bg-white focus-visible:ring-blue-500"
+                          autoComplete="off"
+                        />
+                        {showCitySuggestions && newSchoolCity.trim().length > 0 && (
+                          <div className="absolute z-[100] left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl divide-y divide-slate-50 cursor-pointer">
+                            {loadingCities && (
+                              <div className="p-3 text-xs text-slate-500 flex items-center justify-between">
+                                <span className="font-semibold">Buscando cidades do Brasil...</span>
+                                <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                              </div>
+                            )}
+                            {!loadingCities && filteredCitySuggestions.length === 0 && (
+                              <div className="p-3 text-xs text-slate-400 italic">
+                                Nenhuma cidade encontrada. Continue digitando para cadastrar.
+                              </div>
+                            )}
+                            {!loadingCities && filteredCitySuggestions.map((city, idx) => (
+                              <button
+                                key={`${city.name}-${city.uf}-${idx}`}
+                                type="button"
+                                onMouseDown={() => handleSelectCity(city)}
+                                className="w-full text-left px-3.5 py-2.5 text-xs text-slate-700 font-bold hover:bg-slate-50 transition-colors flex items-center justify-between cursor-pointer border-0"
+                              >
+                                <span className="truncate">{city.name}</span>
+                                <span className="bg-slate-100 text-slate-600 text-[10px] uppercase px-1.5 py-0.5 rounded font-mono shrink-0 font-extrabold">{city.uf}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Seção 3: Horários e Funcionamento */}
+                  <div className="space-y-3 bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-200/60">
+                    <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-wide flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-500" /> Horários & Operação
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="school-in" className="text-slate-700 font-bold text-xs">Horário de Entrada *</Label>
+                        <Input 
+                          id="school-in"
+                          type="time"
+                          value={schoolArrivalTime}
+                          onChange={(e) => setSchoolArrivalTime(e.target.value)}
+                          required
+                          className="rounded-xl border-slate-200 h-10 text-sm font-bold bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="school-out" className="text-slate-700 font-bold text-xs">Horário de Saída *</Label>
+                        <Input 
+                          id="school-out"
+                          type="time"
+                          value={schoolDepartureTime}
+                          onChange={(e) => setSchoolDepartureTime(e.target.value)}
+                          required
+                          className="rounded-xl border-slate-200 h-10 text-sm font-bold bg-white focus-visible:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-1 col-span-1 sm:col-span-2">
+                        <Label className="text-slate-700 font-bold text-xs block">Status da Escola</Label>
+                        <div className="flex gap-4 mt-1">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                            <input 
+                              type="radio" 
+                              name="school-status" 
+                              checked={schoolIsActive === true} 
+                              onChange={() => setSchoolIsActive(true)}
+                              className="text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                            />
+                            Ativa
+                          </label>
+                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                            <input 
+                              type="radio" 
+                              name="school-status" 
+                              checked={schoolIsActive === false} 
+                              onChange={() => setSchoolIsActive(false)}
+                              className="text-red-500 focus:ring-red-500 w-4 h-4 cursor-pointer"
+                            />
+                            Inativa
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
                     {editingSchool && (
                       <Button 
                         type="button" 
@@ -754,22 +906,23 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                           setSchoolDepartureTime('');
                           setSchoolIsActive(true);
                         }}
-                        className="flex-1 h-11 rounded-xl font-bold border-slate-200 shadow-sm"
+                        className="flex-1 h-10 rounded-xl font-bold border-slate-200 shadow-sm text-xs"
                       >
                         Cancelar
                       </Button>
                     )}
                     <Button 
                       type="submit" 
-                      disabled={loadingSchools || !newSchoolName.trim() || !newSchoolInep.trim() || !newSchoolCity.trim() || !schoolAddress.trim() || !schoolLatitude.trim() || !schoolLongitude.trim() || !schoolArrivalTime.trim() || !schoolDepartureTime.trim()} 
-                      className={`flex-[2] h-11 rounded-xl font-black text-white shadow-md transition-all ${
+                      disabled={loadingSchools || !newSchoolName.trim() || !newSchoolInep.trim() || !newSchoolCity.trim() || !schoolAddress.trim() || !schoolArrivalTime.trim() || !schoolDepartureTime.trim()} 
+                      className={`flex-[2] h-10 rounded-xl font-black text-white shadow-md transition-all text-xs tracking-wider uppercase ${
                         editingSchool ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
                       }`}
                     >
-                      {loadingSchools ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : (editingSchool ? 'ATUALIZAR' : 'CADASTRAR ESCOLA')}
+                      {loadingSchools ? <Loader2 className="animate-spin w-4 h-4 mx-auto" /> : (editingSchool ? 'ATUALIZAR' : 'CADASTRAR ESCOLA')}
                     </Button>
                   </div>
                 </form>
+                </>
               </CardContent>
             </Card>
 
@@ -779,7 +932,20 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                   Lista de Escolas
                   <span className="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded-full font-bold">{filteredSchools.length}</span>
                 </CardTitle>
-                <CardDescription className="text-slate-500">Visualização de escolas cadastradas.</CardDescription>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-2">
+                  <CardDescription className="text-slate-500">Visualização de escolas cadastradas.</CardDescription>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLoadDefaultSchools}
+                    disabled={loadingSchools}
+                    className="self-start sm:self-auto bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200 hover:border-blue-300 font-bold text-xs gap-1.5 h-8 rounded-lg"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-pulse" />
+                    Importar Escolas Já Existentes
+                  </Button>
+                </div>
                 
                 <div className="relative mt-4">
                   <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
@@ -796,96 +962,114 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                 </div>
               </CardHeader>
 
-              <CardContent className="p-0 flex-1 overflow-y-auto">
+              <CardContent className="p-0 flex-1 max-h-[550px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {paginatedSchools.length === 0 ? (
-                  <div className="p-8 text-center text-slate-400 font-medium">
-                    Nenhuma escola cadastrada ou encontrada.
+                  <div className="p-8 text-center max-w-md mx-auto space-y-4">
+                    <p className="text-slate-400 font-medium text-sm">
+                      Nenhuma escola cadastrada ou encontrada.
+                    </p>
+                    <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Gostaria de carregar automaticamente as instituições de ensino já existentes na região (como IFPE, UFRPE/UABJ, ETE)?
+                      </p>
+                      <Button
+                        type="button"
+                        onClick={handleLoadDefaultSchools}
+                        disabled={loadingSchools}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-sm px-4 py-2 gap-1.5 w-full"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
+                        Sim, Carregar Escolas Existentes
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div className="p-3 md:p-4 space-y-3">
                     {paginatedSchools.map((school) => (
-                      <div key={school.uid} className="p-4 md:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-slate-50/30 transition-colors">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-extrabold text-slate-800 text-base leading-tight">{school.name}</h4>
-                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                              school.status === 'inactive' 
-                                ? 'bg-red-50 text-red-500 border border-red-100' 
-                                : 'bg-green-50 text-green-600 border border-green-100'
-                            }`}>
-                              {school.status === 'inactive' ? 'Inativa' : 'Ativa'}
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap gap-1.5 text-[10px]">
-                            <span className="bg-blue-50 text-blue-700 font-black px-2 py-0.5 rounded border border-blue-100 font-mono">INEP: {school.inep}</span>
-                            <span className="bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded border border-slate-200">{school.city}</span>
-                          </div>
-
-                          <div className="space-y-1 text-xs text-slate-500">
-                            <p className="flex items-center gap-1.5">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span className="truncate">{school.address || 'Endereço não cadastrado'}</span>
-                            </p>
-
-                            <p className="flex items-center gap-1.5 text-blue-600 font-semibold">
-                              <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                              <span>Entrada: {school.arrivalTime || '--:--'} • Saída: {school.departureTime || '--:--'}</span>
-                            </p>
-
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[11px] text-slate-400">
-                              {school.phone && (
-                                <span className="flex items-center gap-1 text-slate-500 font-medium">
-                                  <Phone className="w-3 h-3 text-slate-400" /> {school.phone}
-                                </span>
-                              )}
-                              {school.responsible && (
-                                <span className="flex items-center gap-1 text-slate-500 font-medium">
-                                  <UserIcon className="w-3 h-3 text-slate-400" /> Resp: {school.responsible}
-                                </span>
-                              )}
-                              {school.latitude !== undefined && school.longitude !== undefined && (
-                                <span className="flex items-center gap-1 font-mono text-[10px]">
-                                  <Globe className="w-3 h-3 text-slate-400" /> {Number(school.latitude).toFixed(4)}, {Number(school.longitude).toFixed(4)}
-                                </span>
-                              )}
+                      <div key={school.uid} className="relative overflow-hidden bg-white p-3.5 md:p-4 rounded-xl border border-slate-200/60 flex flex-col gap-3 transition-all hover:shadow-md hover:border-blue-200/80">
+                        {/* Linha Superior: Título e Ações */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <h4 className="font-extrabold text-slate-800 text-sm md:text-base leading-tight break-words">{school.name}</h4>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                school.status === 'inactive' 
+                                  ? 'bg-red-50 text-red-500 border border-red-100' 
+                                  : 'bg-green-50 text-green-600 border border-green-100'
+                              }`}>
+                                {school.status === 'inactive' ? 'Inativa' : 'Ativa'}
+                              </span>
+                              <span className="bg-blue-50 text-blue-700 font-bold text-[9px] px-1.5 py-0.5 rounded border border-blue-100 font-mono">INEP: {school.inep}</span>
+                              <span className="bg-slate-100 text-slate-600 font-bold text-[9px] px-1.5 py-0.5 rounded border border-slate-200">{school.city}</span>
                             </div>
                           </div>
+                          
+                          {/* Botões de Ação */}
+                          <div className="flex items-center gap-1 shrink-0 bg-slate-50 p-1 rounded-lg border border-slate-100">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => {
+                                setEditingSchool(school);
+                                setNewSchoolName(school.name);
+                                setNewSchoolInep(school.inep);
+                                setNewSchoolCity(school.city);
+                                setSchoolAddress(school.address || '');
+                                setSchoolLatitude(school.latitude !== undefined ? String(school.latitude) : '');
+                                setSchoolLongitude(school.longitude !== undefined ? String(school.longitude) : '');
+                                setSchoolPhone(school.phone || '');
+                                setSchoolResponsible(school.responsible || '');
+                                setSchoolArrivalTime(school.arrivalTime || '');
+                                setSchoolDepartureTime(school.departureTime || '');
+                                setSchoolIsActive(school.status !== 'inactive');
+                              }}
+                              className="w-7 h-7 rounded-md text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                              title="Editar Escola"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => setSchoolToDelete(school)}
+                              className="w-7 h-7 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              title="Remover Escola"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 self-end sm:self-start shrink-0">
-                          <Button 
-                            variant="outline" 
-                            size="icon"
-                            onClick={() => {
-                              setEditingSchool(school);
-                              setNewSchoolName(school.name);
-                              setNewSchoolInep(school.inep);
-                              setNewSchoolCity(school.city);
-                              setSchoolAddress(school.address || '');
-                              setSchoolLatitude(school.latitude !== undefined ? String(school.latitude) : '');
-                              setSchoolLongitude(school.longitude !== undefined ? String(school.longitude) : '');
-                              setSchoolPhone(school.phone || '');
-                              setSchoolResponsible(school.responsible || '');
-                              setSchoolArrivalTime(school.arrivalTime || '');
-                              setSchoolDepartureTime(school.departureTime || '');
-                              setSchoolIsActive(school.status !== 'inactive');
-                            }}
-                            className="w-8 h-8 rounded-lg border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50 transition-colors"
-                            title="Editar Escola"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => setSchoolToDelete(school)}
-                            className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                            title="Remover Escola"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                        {/* Conteúdo Técnico */}
+                        <div className="space-y-2 text-xs text-slate-600 border-t border-slate-100 pt-2">
+                          <p className="flex items-start gap-1.5 leading-tight">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <span className="break-words">{school.address || 'Endereço não cadastrado'}</span>
+                          </p>
+
+                          <div className="flex flex-wrap gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100/50">
+                            <span className="flex items-center gap-1.5 text-blue-600 font-bold text-[11px]">
+                              <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <span>Entrada: {school.arrivalTime || '--:--'} • Saída: {school.departureTime || '--:--'}</span>
+                            </span>
+                          </div>
                         </div>
+
+                        {/* Contatos / Responsáveis */}
+                        {(school.phone || school.responsible) && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-slate-500 pt-1">
+                            {school.phone && (
+                              <span className="flex items-center gap-1 font-medium bg-slate-100/55 px-2 py-0.5 rounded-full">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" /> {school.phone}
+                              </span>
+                            )}
+                            {school.responsible && (
+                              <span className="flex items-center gap-1 font-medium bg-slate-100/55 px-2 py-0.5 rounded-full">
+                                <UserIcon className="w-3.5 h-3.5 text-slate-400" /> Resp: {school.responsible}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1014,7 +1198,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                   Profissionais cadastrados no sistema.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-0 flex-1 min-h-0">
+              <CardContent className="p-0 flex-1 min-h-0 max-h-[500px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <div className="divide-y divide-slate-100">
                   {loading ? (
                     <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-200" /></div>
@@ -1213,7 +1397,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
                   Gestores com permissão de acesso ao painel do sistema.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-0 flex-1 min-h-0">
+              <CardContent className="p-0 flex-1 min-h-0 max-h-[500px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <div className="divide-y divide-slate-100">
                   {loadingAdmins ? (
                     <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-200" /></div>
@@ -1286,7 +1470,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
 
       {/* DIALOGS DE EXCLUSÃO */}
       <Dialog open={!!adminToDelete} onOpenChange={(open) => !open && setAdminToDelete(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-red-600">Excluir Administrador?</DialogTitle>
           </DialogHeader>
@@ -1303,7 +1487,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
       </Dialog>
 
       <Dialog open={!!driverToDelete} onOpenChange={(open) => !open && setDriverToDelete(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-red-600">Excluir Motorista?</DialogTitle>
           </DialogHeader>
@@ -1320,7 +1504,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
       </Dialog>
 
       <Dialog open={!!schoolToDelete} onOpenChange={(open) => !open && setSchoolToDelete(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-red-600">Excluir Escola?</DialogTitle>
           </DialogHeader>
@@ -1337,7 +1521,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
       </Dialog>
 
       <Dialog open={!!clearAction} onOpenChange={(open) => !open && setClearAction(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-red-600 uppercase">Atenção!</DialogTitle>
           </DialogHeader>
@@ -1366,7 +1550,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
 
       {/* DIALOG DE EDITAR MOTORISTA */}
       <Dialog open={!!editingDriver} onOpenChange={(open) => !open && setEditingDriver(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-md">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[94vw] sm:max-w-md max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-slate-800 flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-blue-600 animate-pulse" />
@@ -1457,7 +1641,7 @@ export default function DirectionView({ serviceConfig }: DirectionViewProps) {
 
       {/* DIALOG DE EDITAR ADMINISTRADOR */}
       <Dialog open={!!editingAdmin} onOpenChange={(open) => !open && setEditingAdmin(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-md">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[94vw] sm:max-w-md max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-slate-800 flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-purple-600 animate-pulse" />

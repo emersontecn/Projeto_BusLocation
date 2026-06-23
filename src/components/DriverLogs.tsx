@@ -269,6 +269,17 @@ export default function DriverLogs() {
                         <Clock className="w-3 h-3 text-slate-400" />
                         <span>Início: {log.startTime?.toDate() ? format(log.startTime.toDate(), 'HH:mm', { locale: ptBR }) : '...'}</span>
                       </div>
+                      {log.endTime?.toDate() ? (
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-emerald-500" />
+                          <span>Fim: {format(log.endTime.toDate(), 'HH:mm', { locale: ptBR })}</span>
+                        </div>
+                      ) : log.routeName ? (
+                        <div className="flex items-center gap-1 text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded-md text-[9px] md:text-[10px] shrink-0">
+                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
+                          <span>Em andamento</span>
+                        </div>
+                      ) : null}
                       {log.routeName && (
                         <div className="flex items-center gap-1 overflow-hidden">
                           <RouteIcon className="w-3 h-3 text-slate-400 shrink-0" />

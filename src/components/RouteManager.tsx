@@ -159,8 +159,8 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
   };
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden bg-slate-50 h-[500px] md:h-[600px] border border-slate-200">
-      <div className="absolute inset-0 z-0">
+    <div className="w-full rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 flex flex-col sm:relative sm:h-[500px] md:h-[600px]">
+      <div className="w-full h-[320px] sm:h-full relative sm:absolute sm:inset-0 sm:z-0 shrink-0">
         <Map 
           center={pendingStopLocation || BELO_JARDIM_CENTER} 
           stops={routes.find(r => r.id === selectedRouteId)?.stops}
@@ -171,7 +171,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
         />
       </div>
 
-      <div className="absolute top-2 left-2 md:top-4 md:left-4 z-30 w-[calc(100%-1rem)] sm:w-80 flex flex-col gap-2 md:gap-3 pointer-events-none h-[calc(100%-2rem)]">
+      <div className="relative sm:absolute sm:top-2 sm:left-2 md:top-4 md:left-4 z-30 w-full sm:w-80 flex flex-col gap-2 md:gap-3 p-3 sm:p-0 pointer-events-none h-auto sm:h-[calc(100%-1rem)] md:h-[calc(100%-2rem)]">
         <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden shrink-0">
           <div className="p-3 md:p-4 bg-slate-900 text-white flex items-center justify-between">
             <h2 className="text-xs md:text-sm font-black flex items-center gap-2 uppercase tracking-tight">
@@ -214,7 +214,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
         </div>
 
         {selectedRouteId && (
-          <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col shrink min-h-0 max-h-[30vh] md:max-h-[500px]">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col shrink min-h-0 max-h-[220px] sm:max-h-[30vh] md:max-h-[500px]">
             <div className="p-2.5 md:p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
               <h3 className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-2">
                 <MapPin className="w-3 h-3 text-blue-600" />
@@ -225,7 +225,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
               </Button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {routes.find(r => r.id === selectedRouteId)?.stops?.sort((a, b) => a.order - b.order).map((stop, i) => (
                 <div key={stop.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
                   <div className="flex items-center gap-2 overflow-hidden">
@@ -303,7 +303,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
       </AnimatePresence>
 
       <Dialog open={isAddingRoute} onOpenChange={setIsAddingRoute}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black">Nova Rota</DialogTitle>
           </DialogHeader>
@@ -350,7 +350,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
       </Dialog>
 
       <Dialog open={!!routeToDelete} onOpenChange={(open) => !open && setRouteToDelete(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-red-600">Excluir Rota?</DialogTitle>
           </DialogHeader>
@@ -367,7 +367,7 @@ export default function RouteManager({ serviceConfig }: { serviceConfig?: { type
       </Dialog>
 
       <Dialog open={!!errorMessage} onOpenChange={(open) => !open && setErrorMessage(null)}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl max-w-sm">
+        <DialogContent className="rounded-2xl sm:rounded-3xl border-none shadow-2xl w-[92vw] sm:max-w-sm max-w-full">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-amber-600">Ops!</DialogTitle>
           </DialogHeader>
