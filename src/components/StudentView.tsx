@@ -59,7 +59,7 @@ export default function StudentView({ serviceType, entityName }: StudentViewProp
           
           // Strict filter: Ignore stale trips or those with placeholder/empty names
           const isGeneric = !data.driverName || 
-                           ['Mock User', 'Administrador', 'Motorista', 'Motorista (Protótipo)', 'Administrador (Protótipo)', 'Administrador Central'].some(n => data.driverName === n);
+                           ['Mock User', 'Motorista (Protótipo)', 'Administrador (Protótipo)', 'Administrador Central'].some(n => data.driverName === n);
           
           if (lastUpdated < fifteenMinutesAgo || isGeneric) return null;
 

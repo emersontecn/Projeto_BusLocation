@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { UserProfile, UserRole, ServiceType } from './types';
 import DriverView from './components/DriverView';
 import StudentView from './components/StudentView';
@@ -127,6 +127,28 @@ export default function App() {
   };
 
   const logout = async () => {
+    if (user && user.role === 'driver') {
+      try {
+        const q = query(
+          collection(db, 'trips'),
+          where('driverId', '==', user.uid),
+          where('status', '==', 'active')
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const promises = snapshot.docs.map(t => 
+            updateDoc(doc(db, 'trips', t.id), {
+              status: 'completed',
+              lastUpdated: new Date().toISOString()
+            })
+          );
+          await Promise.all(promises);
+        }
+      } catch (err) {
+        console.error("Error completing active trips on logout:", err);
+      }
+    }
+    
     localStorage.removeItem('auth_user');
     await signOut(auth);
     setUser(null);

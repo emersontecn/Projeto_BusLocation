@@ -100,17 +100,44 @@ export default function DriverView({ user, serviceConfig }: { user: UserProfile,
     );
     return onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
-        const docSnap = snapshot.docs[0];
-        const data = docSnap.data() as Trip;
-        const lastUpdated = data.lastUpdated ? new Date(data.lastUpdated) : new Date(0);
+        const activeDocs = snapshot.docs;
+        
+        // Find the newest trip to keep active, and auto-complete any stale or older duplicate ones
+        const tripsWithDates = activeDocs.map(d => {
+          const data = d.data() as Trip;
+          const lastUpdated = data.lastUpdated ? new Date(data.lastUpdated) : new Date(0);
+          return { doc: d, data, lastUpdated };
+        });
+        
+        // Sort by lastUpdated desc (newest first)
+        tripsWithDates.sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
+        
+        const newest = tripsWithDates[0];
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-
-        if (lastUpdated > fifteenMinutesAgo) {
-          const tripData = { id: docSnap.id, ...data } as Trip;
+        
+        if (newest.lastUpdated > fifteenMinutesAgo) {
+          const tripData = { id: newest.doc.id, ...newest.data } as Trip;
           setActiveTrip(tripData);
           setSelectedRouteId(tripData.routeId);
+          
+          // Auto-complete any other duplicate active trips for this driver
+          if (tripsWithDates.length > 1) {
+            tripsWithDates.slice(1).forEach(item => {
+              updateDoc(doc(db, 'trips', item.doc.id), {
+                status: 'completed',
+                lastUpdated: new Date().toISOString()
+              }).catch(err => console.error("Error closing duplicate active trip:", err));
+            });
+          }
         } else {
-          // If the trip is stale, we can potentially mark it as completed here or just ignore it
+          // If the newest one is stale, all active trips are stale.
+          // Auto-complete all of them in Firestore so they disappear from tracking views.
+          tripsWithDates.forEach(item => {
+            updateDoc(doc(db, 'trips', item.doc.id), {
+              status: 'completed',
+              lastUpdated: new Date().toISOString()
+            }).catch(err => console.error("Error auto-completing stale trip:", err));
+          });
           setActiveTrip(null);
         }
       } else {
