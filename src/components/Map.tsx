@@ -312,7 +312,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
   
   const [passedStopIds, setPassedStopIds] = useState<string[]>([]);
   const [passingStopId, setPassingStopId] = useState<string | null>(null);
-  const [detectionRadius, setDetectionRadius] = useState<number>(75); // dynamic meter range for API tracking!
+  const [detectionRadius, setDetectionRadius] = useState<number>(35); // dynamic meter range for API tracking! (reduced from 75m to 35m for higher precision)
 
   const [userInteracted, setUserInteracted] = useState(false);
   const [interpolatedBusLocation, setInterpolatedBusLocation] = useState<[number, number] | undefined>(busLocation);
@@ -377,16 +377,16 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
     };
   }, [busLocation]);
 
-  // Track the bus position relative to each stop in real-time
+  // Track the bus position relative to each stop in real-time using interpolated visual location
   useEffect(() => {
-    if (!busLocation || !stops || stops.length === 0) return;
+    if (!interpolatedBusLocation || !stops || stops.length === 0) return;
 
     let currentPassingId: string | null = null;
     let closestDist = Infinity;
 
     stops.forEach((stop) => {
-      const dist = calculateDistance(busLocation[0], busLocation[1], stop.lat, stop.lng);
-      // Check if within the chosen detection accuracy radius (e.g. 50m, 75m, 120m)
+      const dist = calculateDistance(interpolatedBusLocation[0], interpolatedBusLocation[1], stop.lat, stop.lng);
+      // Check if within the chosen detection accuracy radius (e.g. 35m)
       if (dist < detectionRadius && dist < closestDist) {
         currentPassingId = stop.id;
         closestDist = dist;
@@ -409,7 +409,7 @@ export default function Map({ center, zoom = 14, busLocation, stops = [], classN
     } else {
       setPassingStopId(null);
     }
-  }, [busLocation, stops, detectionRadius]);
+  }, [interpolatedBusLocation, stops, detectionRadius]);
 
   return (
     <div className={`relative ${className || ''}`} style={{ height: '100%', width: '100%' }}>
